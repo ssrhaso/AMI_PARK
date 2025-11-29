@@ -1,16 +1,51 @@
+""" UTILITIES FOR DATASET HANDLING AND CONFIGURATION """
+
+import os
+import json
+import pickle
+import numpy as np
 import torch
+from dataclasses import dataclass, asdict
 
-CONFIG = {
-    "env_name": "parking-v0",           # environment name (parking simulation)
-    "state_dim": 6,                     # x, y, vx, vy, cos_h, sin_h (dictating the state representation)
-    "action_dim": 2,                    # steering, acceleration (actions for the vehicle)
-    "hidden_dim": 256,                  # hidden layer size for neural networks (256 for better capacity)
-    "horizon": 10,                      # planning horizon (number of steps to plan ahead)
-    "device": "cuda" if torch.cuda.is_available() else "cpu" # device configuration
-}
+@dataclass
+class Config:
+    # ENV
+    env_name : str = 'parking-v0'
+    state_dim : int = 6                     # OUTPUT VECTOR (X, Y, VX, VY, COS(THETA), SIN(THETA) )
+    action_dim : int = 2                    # ACTION CONTROLS (ACCELERATION/BRAKING, STEERING)   
+    
+    # DATA 
+    num_data_steps : int = 2000
+    data_dir : str = "data"
+    models_dir : str = "models"
+    
+    def save(
+        self,
+        path : str
+    ):
+        with open(path, 'w') as f:
+            json.dump(asdict(self), f, indent = 2)
 
-def get_device():
-    return torch.device(CONFIG["device"])
+cfg = Config()
 
+def save_dataset(
+    data,
+    filename : str = "trajectories.pkl"
+): 
+    """ SAVES LIST OF DICT TO PICKLE FILE """
 
+    path = os.path.join(cfg.data_dir, filename)
+    with open(path, 'wb') as f:
+        pickle.dump(data, f)
+    print(f"SAVED {len(data)} TRANSITIONS TO {path}")
+    
+def load_dataset(
+    filename : str = "trajectories.pkl"
+):
+    """ LOADS LIST OF DICT FROM PICKLE FILE """
 
+    path = os.path.join(cfg.data_dir, filename)
+    with open(path, 'rb') as f:
+        data = pickle.load(f)
+    print(f"LOADED {len(data)} TRANSITIONS FROM {path}")
+    return data
