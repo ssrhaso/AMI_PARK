@@ -15,7 +15,7 @@ class Config:
     action_dim : int = 2                    # ACTION CONTROLS (ACCELERATION/BRAKING, STEERING)   
     
     # DATA 
-    num_data_steps : int = 2000
+    num_data_steps : int = 50000              # TOTAL NUMBER OF STEPS TO COLLECT
     data_dir : str = "data"
     models_dir : str = "models"
     
