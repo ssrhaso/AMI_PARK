@@ -76,7 +76,7 @@ def train():
         print(f"EPOCH {epoch + 1}/{epochs} - LOSS: {total_loss / len(loader):.6f}")
     
     # SAVE MODEL
-    model.save(os.path.join(cfg.models_dir, 'world_model.pth'))
+    model.save(os.path.join(cfg.models_dir, 'world_model.pt'))
 
 if __name__ == "__main__":
     train()
