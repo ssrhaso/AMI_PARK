@@ -2,6 +2,7 @@
 import torch
 import numpy as np
 
+
 class CEMPlanner:
     def __init__(
         self,
@@ -61,8 +62,56 @@ class CEMPlanner:
         std = torch.ones((self.horizon, self.action_dim), device=self.device)
         
         # PREP CURRENT STATE TENSOR
-        current_state = torch.tensor(current_state, device=self.device, dtype=torch.float32)
+        current_state_t = torch.tensor(current_state, device=self.device, dtype=torch.float32)
         
         # OPTIMIZATION LOOP (THINKING PROCESS)
-        
-        
+        for i in range(self.iterations):
+            
+            # 1 - SAMPLE 1000 TRAJECTORIES FROM DISTRIBUTION
+            
+            action_seqs = torch.normal(
+                mean.expand(self.num_samples, -1, -1),
+                std.expand(self.num_samples, -1, -1)
+            )
+            action_seqs = torch.clamp(action_seqs, -1, 1)  # CLAMP ACTIONS TO VALID RANGE
+            
+            # 2 - SIMULATE FUTURE TRAJECTORIES USING WORLD MODEL
+            costs = torch.zeros((self.num_samples,), device=self.device)
+            state = current_state_t.expand(self.num_samples, -1) #DUPLICATE STATE 1000 TIMES
+            
+            for t in range(self.horizon):
+                action = action_seqs[:, t, :]
+                
+                # NORMALISE > PREDICT > DENORMALISE
+                state_norm, action_norm = self.normalize(state, action)
+                
+                # PREDICT NEXT STATE
+                with torch.no_grad():
+                    next_state_norm = self.world_model(state_norm, action_norm)
+                
+                # DENORMALISE NEXT STATE
+                next_state = self.denormalize_state(next_state_norm)
+                
+                # COMPUTE COST (USING THE CORRECT METHOD NAME)
+                # We only pass the state, because cost is purely state-dependent
+                step_cost = self.cost_fn.get_cost(next_state)
+                costs += step_cost
+                
+                # UPDATE STATE
+                state = next_state
+
+            # 3 - SELECT ELITES (BEST 10%)
+            k = self.num_samples // 10
+            top_costs, top_indices = torch.topk(costs, k, largest=False) # SMALLEST COST IS BEST
+            top_actions = action_seqs[top_indices]
+
+            # 4 - UPDATE DISTRIBUTION (LEARN FROM THE BEST)
+            new_mean = top_actions.mean(dim=0)
+            new_std = top_actions.std(dim=0)
+
+            # SMOOTH UPDATE (MOMENTUM)
+            mean = 0.8 * new_mean + 0.2 * mean
+            std = 0.8 * new_std + 0.2 * std
+
+        # RETURN THE FIRST ACTION OF THE BEST PLAN
+        return mean[0].cpu().numpy()
