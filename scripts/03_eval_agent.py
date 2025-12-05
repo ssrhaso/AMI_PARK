@@ -31,12 +31,16 @@ def main():
     # 4. The Main Loop
     for step in range(200): # Run for 200 steps
         # A. PLAN: Agent thinks and returns best action
-        action = agent.get_action(obs)
+        env.env.render()
+        
+        action = agent.act(obs)
         
         # B. ACT: Execute action in environment
         obs, reward, terminated, truncated, info = env.step(action)
         
-        # Optional: Print status
+        import time
+        time.sleep(0.05)
+        #  Print status
         if step % 10 == 0:
             print(f"Step {step}: Action Taken {action}")
 

@@ -7,7 +7,7 @@ class CEMPlanner:
     def __init__(
         self,
         world_model,
-        cost_fn,
+        cost_function,
         scalers,
         horizon : int = 12,
         num_samples : int = 1000,
@@ -15,7 +15,7 @@ class CEMPlanner:
         device : str = "cpu",
     ):
         self.world_model = world_model
-        self.cost_fn = cost_fn
+        self.cost_function = cost_function
         self.scalers = scalers
         self.horizon = horizon
         self.num_samples = num_samples
@@ -94,7 +94,7 @@ class CEMPlanner:
                 
                 # COMPUTE COST (USING THE CORRECT METHOD NAME)
                 # We only pass the state, because cost is purely state-dependent
-                step_cost = self.cost_fn.get_cost(next_state)
+                step_cost = self.cost_function.get_cost(next_state)
                 costs += step_cost
                 
                 # UPDATE STATE
