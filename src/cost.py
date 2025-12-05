@@ -9,22 +9,16 @@ class CostFunction:
         if isinstance(states, np.ndarray): 
             states = torch.tensor(states, dtype=torch.float32)
         
-        # Extract Position
         pos = states[..., 0:2]
         target_pos = self.target[0:2]
         
-        # 1. DISTANCE (Primary Objective)
-        # This forces movement.
+        # 1. DISTANCE (Simple and effective)
         dist = torch.norm(pos - target_pos, dim=-1)
         
-        # 2. WALL BARRIER (Hard Constraint)
-        # Only penalize if we actually LEAVE the playable area.
-        # Playable area is roughly [-0.4, 0.4].
-        # ReLU is 0 if inside, positive if outside.
-        x_out = torch.relu(torch.abs(pos[..., 0]) - 0.4)
-        y_out = torch.relu(torch.abs(pos[..., 1]) - 0.4)
-        
-        # If x_out > 0, we are crashing. Add MASSIVE cost.
+        # 2. WALL SAFETY (The invisible fence)
+        limit = 0.35
+        x_out = torch.relu(torch.abs(pos[..., 0]) - limit)
+        y_out = torch.relu(torch.abs(pos[..., 1]) - limit)
         wall_cost = 1000.0 * (x_out + y_out)
         
         return dist + wall_cost
