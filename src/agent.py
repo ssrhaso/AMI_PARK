@@ -42,9 +42,9 @@ class DreamerAgent:
             world_model = self.world_model,
             cost_function = self.cost_function,
             scalers = scalers,
-            horizon = 6, 
+            horizon = 8, 
             num_samples = 500,
-            iterations = 7,
+            iterations = 10,
             device = str(self.device)
         )
         
