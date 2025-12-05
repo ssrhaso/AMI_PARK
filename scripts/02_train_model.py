@@ -13,51 +13,54 @@ from world_model import WorldModel
 from utils import cfg
 
 def train():
-    # LOAD DATASET
+    # 1. LOAD DATASET
     data_path = os.path.join(cfg.data_dir, "test_env_data.pkl")
     print(f"LOADING DATASET FROM {data_path}")
     
     with open(data_path, 'rb') as f:
         data = pickle.load(f)
         
-    # PREPARE ARRAYS
+    # 2. PREPARE ARRAYS
     states = np.array([tr['state'] for tr in data], dtype=np.float32)
     actions = np.array([tr['action'] for tr in data], dtype=np.float32)
     next_states = np.array([tr['next_state'] for tr in data], dtype=np.float32)
     
-    # NORMALIZE DATA
+    # --- CRITICAL CHANGE: CALCULATE RAW DELTAS ---
+    deltas = next_states - states
+    
+    # 3. NORMALIZE
     scaler_state = StandardScaler()
     scaler_action = StandardScaler()
+    scaler_delta = StandardScaler()  # NEW: Dedicated scaler for changes
     
     states_norm = scaler_state.fit_transform(states)
     actions_norm = scaler_action.fit_transform(actions)
-    next_states_norm = scaler_state.transform(next_states)
+    deltas_norm = scaler_delta.fit_transform(deltas)  # Normalize the deltas
     
-    # --- CRITICAL FIX: TRAIN ON DELTA (Change in State) ---
-    # We want model to predict: (Next - Current) / Scale
-    delta_norm = next_states_norm - states_norm
-    
-    # SAVE SCALERS
+    # 4. SAVE SCALERS (Now includes 'delta')
     scaler_path = os.path.join(cfg.models_dir, 'scalers.pkl')
     with open(scaler_path, 'wb') as f:
-        pickle.dump({'state': scaler_state, 'action': scaler_action}, f)
-    print(f"SAVED SCALERS TO {scaler_path}")
+        pickle.dump({
+            'state': scaler_state, 
+            'action': scaler_action,
+            'delta': scaler_delta
+        }, f)
+    print(f"SAVED SCALERS (State, Action, Delta) TO {scaler_path}")
     
-    # TORCH DATASET
+    # 5. PREPARE TRAINING
     dataset = TensorDataset(
         torch.tensor(states_norm, dtype=torch.float32),
         torch.tensor(actions_norm, dtype=torch.float32),
-        torch.tensor(delta_norm, dtype=torch.float32) # Target is DELTA now
+        torch.tensor(deltas_norm, dtype=torch.float32) # Target is DELTA
     )
     
     loader = DataLoader(dataset, batch_size=64, shuffle=True)
     
-    # MODEL + OPTIM
     model = WorldModel().to(torch.device("cpu"))
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     loss_fn = nn.MSELoss()
     
-    print("STARTING TRAINING ON DELTAS...")
+    print("STARTING TRAINING ON DELTA DYNAMICS...")
     epochs = 50 
     
     for epoch in range(epochs):
@@ -73,7 +76,6 @@ def train():
         if (epoch+1) % 10 == 0:
             print(f"EPOCH {epoch+1}/{epochs} - LOSS: {total_loss / len(loader):.6f}")
             
-    # SAVE MODEL
     model_path = os.path.join(cfg.models_dir, 'world_model.pt')
     model.save(model_path)
 

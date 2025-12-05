@@ -121,7 +121,7 @@ class CEMPlanner:
 
         
     def plan(self, current_state):
-        """Plan actions using CEM and world model"""
+        """Plan actions using CEM and world model (Delta Dynamics Version)"""
         
         mean = torch.zeros(self.horizon, self.action_dim, device=self.device)
         std = torch.ones(self.horizon, self.action_dim, device=self.device)
@@ -151,13 +151,15 @@ class CEMPlanner:
             state_norm = current_state_norm.expand(self.num_samples, -1)  # Keep normalized
             
             for t in range(self.horizon):
-                action_raw = action_seqs_raw[:, t, :]  # Use raw action
-                
-                # Normalize action for world model
+                action_raw = action_seqs_raw[:, t, :]
                 action_norm = (action_raw - action_mean_t) / action_scale_t
                 
                 with torch.no_grad():
-                    next_state_norm = self.world_model(state_norm, action_norm)
+                    # PREDICT DELTA
+                    delta_norm = self.world_model(state_norm, action_norm)
+                    
+                # APPLY DELTA: Next = Current + Delta
+                next_state_norm = state_norm + delta_norm
                 
                 # Denormalize for cost evaluation
                 next_state_raw = next_state_norm * state_scale_t + state_mean_t
@@ -165,23 +167,21 @@ class CEMPlanner:
                 step_cost = self.cost_function.get_cost(next_state_raw, action_raw)
                 costs += step_cost
                 
-                state_norm = next_state_norm  # Stay in normalized space
+                state_norm = next_state_norm
             
-            # Select elites (best 10%)
+            # Select elites
             k = max(1, int(0.1 * self.num_samples))
             top_costs, top_indices = torch.topk(costs, k, largest=False)
-            top_actions = action_seqs[top_indices]  # Keep in normalized space for update
+            top_actions = action_seqs[top_indices]
             
             # Update distribution
             new_mean = top_actions.mean(dim=0)
             new_std = top_actions.std(dim=0)
             
-            # Faster convergence (was 0.9/0.1, now 0.7/0.3)
             mean = 0.7 * new_mean + 0.3 * mean
             std = 0.7 * new_std + 0.3 * std
         
-        # Return denormalized action (first step of best elite sequence)
         best_action_raw = action_seqs_raw[top_indices[0], 0, :].cpu().numpy()
-        
         return best_action_raw
+
 
