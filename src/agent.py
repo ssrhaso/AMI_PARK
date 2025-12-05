@@ -1,59 +1,33 @@
-""" AGENT MODULE - CONNECTS WORLD MODEL , COST FUNCTION AND PLANNER TOGETHER """
-import os
-import pickle
-import numpy as np
-import torch
-
+import os, pickle, torch
 from world_model import WorldModel
 from cost import CostFunction
 from planner import CEMPlanner
-from utils import cfg
-
 
 class DreamerAgent:
-    def __init__(
-        self,
-        target_state : np.ndarray,
-    ):
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    def __init__(self, target_state, models_dir='models'):
+        self.device = torch.device("cpu")
         
-        # LOAD TRAINED WORLD MODEL
-        self.world_model = WorldModel(
-            state_dim = cfg.state_dim,
-            action_dim = cfg.action_dim,
-        ).to(self.device)
-        
-        model_path = os.path.join(cfg.models_dir, "world_model.pt")
-        state_dict = torch.load(model_path, map_location = self.device)
-        self.world_model.load_state_dict(state_dict)
+        # Load Model
+        self.world_model = WorldModel().to(self.device)
+        self.world_model.load_state_dict(torch.load(os.path.join(models_dir, 'world_model.pt'), map_location=self.device))
         self.world_model.eval()
-        print(f"LOADED WORLD MODEL FROM {model_path}")
         
-        # LOAD SCALERS
-        scaler_path = os.path.join(cfg.models_dir, "scalers.pkl")
-        with open(scaler_path, "rb") as f:
-            scalers = pickle.load(f) # {'state': .. , 'action': ..}
+        # Load Scalers
+        with open(os.path.join(models_dir, 'scalers.pkl'), 'rb') as f:
+            self.scalers = pickle.load(f)
             
-        # COST FUNCTION
-        self.cost_function = CostFunction(target_state = target_state)
+        self.cost = CostFunction(target_state)
         
-        # PLANNER
+        # AGGRESSIVE PLANNER
         self.planner = CEMPlanner(
-            world_model = self.world_model,
-            cost_function = self.cost_function,
-            scalers = scalers,
-            horizon = 8, 
-            num_samples = 500,
-            iterations = 10,
-            device = str(self.device)
+            world_model=self.world_model,
+            cost_function=self.cost,
+            scalers=self.scalers,
+            horizon=5,           # Short horizon = Fast & Responsive
+            num_samples=1000,    # Many samples = Find good moves
+            num_iterations=5,    # Think hard
+            device=str(self.device)
         )
-        
-    def act(
-        self,
-        state : np.ndarray
-    ) -> np.ndarray:
-        """ GIVEN CURRENT STATE, RETURNS ACTION FROM PLANNER """
-        
-        action = self.planner.plan(state)
-        return action
-    
+
+    def act(self, state):
+        return self.planner.plan(state)

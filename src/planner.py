@@ -1,109 +1,75 @@
 import torch
 import numpy as np
 
+
 class CEMPlanner:
-    def __init__(
-        self,
-        world_model,
-        cost_function,
-        scalers,
-        horizon=10,
-        num_samples=1000,
-        iterations=5,
-        device="cpu"
-    ):
+    """Cross-Entropy Method for trajectory planning"""
+    
+    def __init__(self, world_model, cost_function, scalers, 
+                 horizon=10, num_samples=1000, num_iterations=3, device='cpu'):
         self.world_model = world_model
         self.cost_function = cost_function
         self.scalers = scalers
         self.horizon = horizon
         self.num_samples = num_samples
-        self.iterations = iterations
+        self.num_iterations = num_iterations
         self.device = device
         self.action_dim = 2
-
-    def denormalize_delta(self, delta_norm):
-        """Convert normalized delta to raw delta"""
-        delta_mean = torch.tensor(
-            self.scalers['delta'].mean_,
-            device=self.device,
-            dtype=torch.float32
-        )
-        delta_scale = torch.tensor(
-            self.scalers['delta'].scale_,
-            device=self.device,
-            dtype=torch.float32
-        )
-        return delta_norm * delta_scale + delta_mean
-
+    
     def plan(self, current_state):
-        """Plan using Delta Dynamics"""
+        current_state = torch.tensor(current_state, dtype=torch.float32, device=self.device)
         
-        # Setup scalers
         state_mean = torch.tensor(self.scalers['state'].mean_, device=self.device, dtype=torch.float32)
-        state_scale = torch.tensor(self.scalers['state'].scale_, device=self.device, dtype=torch.float32)
+        state_std = torch.tensor(self.scalers['state'].scale_, device=self.device, dtype=torch.float32)
         action_mean = torch.tensor(self.scalers['action'].mean_, device=self.device, dtype=torch.float32)
-        action_scale = torch.tensor(self.scalers['action'].scale_, device=self.device, dtype=torch.float32)
-
-        # Initialize Distribution
-        mean = torch.zeros(self.horizon, self.action_dim, device=self.device)
-        std = torch.ones(self.horizon, self.action_dim, device=self.device)
-
-        # Prepare Initial State
-        current_state_raw = torch.tensor(current_state, device=self.device, dtype=torch.float32)
+        action_std = torch.tensor(self.scalers['action'].scale_, device=self.device, dtype=torch.float32)
         
-        for i in range(self.iterations):
-            # Sample Actions (Normalized Space)
-            action_seqs = torch.normal(
-                mean.expand(self.num_samples, -1, -1),
-                std.expand(self.num_samples, -1, -1)
-            )
-            action_seqs = torch.clamp(action_seqs, -2.0, 2.0)  # Allow wider range
+        mu = torch.zeros(self.horizon, self.action_dim, device=self.device)
+        sigma = torch.ones(self.horizon, self.action_dim, device=self.device)
+        
+        best_elite_sequences = None
+        
+        for iteration in range(self.num_iterations):
+            noise = torch.randn(self.num_samples, self.horizon, self.action_dim, device=self.device)
+            action_seqs = mu.unsqueeze(0) + sigma.unsqueeze(0) * noise
+            action_seqs = torch.clamp(action_seqs, -2.0, 2.0)
             
-            # Convert to Raw Actions
-            action_seqs_raw = action_seqs * action_scale + action_mean
+            action_seqs_raw = action_seqs * action_std.unsqueeze(0).unsqueeze(0) + action_mean.unsqueeze(0).unsqueeze(0)
             action_seqs_raw = torch.clamp(action_seqs_raw, -1.0, 1.0)
             
             costs = torch.zeros(self.num_samples, device=self.device)
-            state_raw = current_state_raw.expand(self.num_samples, -1)
+            states = current_state.unsqueeze(0).expand(self.num_samples, -1)
             
             for t in range(self.horizon):
-                action_raw = action_seqs_raw[:, t, :]
+                actions_t = action_seqs_raw[:, t, :]
                 
-                # Normalize for model
-                state_norm = (state_raw - state_mean) / state_scale
-                action_norm = (action_raw - action_mean) / action_scale
+                states_norm = (states - state_mean) / (state_std + 1e-8)
+                actions_norm = (actions_t - action_mean) / (action_std + 1e-8)
                 
                 with torch.no_grad():
-                    # Model predicts DELTA
-                    delta_norm = self.world_model(state_norm, action_norm)
+                    next_states_norm = self.world_model(states_norm, actions_norm)
                 
-                # Denormalize delta
-                delta_raw = self.denormalize_delta(delta_norm)
+                next_states = next_states_norm * state_std + state_mean
+                next_states = torch.clamp(next_states, -20.0, 20.0)
                 
-                # INTEGRATE: Next = Current + Delta
-                next_state_raw = state_raw + delta_raw
+                step_costs = self.cost_function.get_cost(next_states, actions_t)
+                costs += step_costs
                 
-                # Clip to valid range
-                next_state_raw = torch.clamp(next_state_raw, -20.0, 20.0)
-                
-                # Calculate cost
-                step_cost = self.cost_function.get_cost(next_state_raw, action_raw)
-                costs += step_cost
-                
-                state_raw = next_state_raw
+                states = next_states
             
-            # Elite selection
-            k = max(1, int(0.1 * self.num_samples))
-            top_costs, top_indices = torch.topk(costs, k, largest=False)
-            top_actions = action_seqs[top_indices]
+            elite_count = max(1, int(0.1 * self.num_samples))
+            _, elite_idx = torch.topk(costs, elite_count, largest=False)
+            elite_seqs = action_seqs[elite_idx]
+            best_elite_sequences = elite_seqs
             
-            # Update distribution
-            new_mean = top_actions.mean(dim=0)
-            new_std = top_actions.std(dim=0) + 0.01  # Add small noise for exploration
+            mu_new = elite_seqs.mean(dim=0)
+            sigma_new = elite_seqs.std(dim=0) + 0.01
             
-            mean = 0.5 * new_mean + 0.5 * mean
-            std = 0.5 * new_std + 0.5 * std
-            
-        # Return best action
-        best_action_raw = action_seqs_raw[top_indices, 0, :].cpu().numpy()
-        return best_action_raw
+            mu = 0.9 * mu + 0.1 * mu_new
+            sigma = 0.9 * sigma + 0.1 * sigma_new
+        
+        best_action_norm = best_elite_sequences[0, 0, :]
+        best_action = best_action_norm * action_std + action_mean
+        best_action = torch.clamp(best_action, -1.0, 1.0)
+        
+        return best_action.cpu().numpy()

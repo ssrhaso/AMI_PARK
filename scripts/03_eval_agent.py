@@ -1,8 +1,6 @@
-import sys
-import os
+import sys, os
 from pathlib import Path
-import numpy as np
-import torch
+import time
 
 project_root = Path(__file__).resolve().parent.parent
 sys.path.append(str(project_root / 'src'))
@@ -10,45 +8,39 @@ sys.path.append(str(project_root / 'src'))
 from env_wrapper import ParkingWrapper
 from agent import DreamerAgent
 
+
 def main():
-    # Initialize Environment
-    print("INITIALIZING ENVIRONMENT")
+    print('='*70)
+    print('DREAMER-PARK EVALUATION')
+    print('='*70)
+    
+    print('\n Initializing environment...')
     env = ParkingWrapper(render_mode='human')
     obs, _ = env.reset()
-    
-    # Get Goal
     target_state = env.get_goal()
-    print(f"TARGET STATE: {target_state}")
-    print(f"TARGET STATE SHAPE: {target_state.shape}")
+    print(f'    Target: {target_state}')
     
-    # Initialize Agent
-    agent = DreamerAgent(target_state)
-    print("AGENT INITIALIZED. SIMULATION STARTED.")
+    print('\n Initializing agent...')
+    agent = DreamerAgent(target_state, models_dir=str(project_root / 'models'))
     
-    # Main Loop
+    print('\n Running simulation...\n')
+    
     for step in range(200):
         env.env.render()
-        
-        # Get action from planner
         action = agent.act(obs)
-        
-        # Execute in environment (action already in [-1, 1] range)
         obs, reward, terminated, truncated, info = env.step(action)
         
-        # Print status
         x, y, vx, vy, c, s = obs
-        # FIXED LINE BELOW: action[0] and action[1]
-        print(f"step={step:3d} | pos=({x:6.2f},{y:6.2f}) | vel=({vx:5.2f},{vy:5.2f}) | action=({action[0]:5.2f},{action[1]:5.2f})")
+        print(f'step={step:3d} | pos=({x:7.4f},{y:7.4f}) | vel=({vx:6.4f},{vy:6.4f})')
         
-        import time
-        time.sleep(0.02)  # Keep rendering smooth
+        time.sleep(0.02)
         
         if terminated or truncated:
-            print("EPISODE COMPLETED")
+            print('\n✓ COMPLETED')
             break
     
     env.close()
-    print("COMPLETED")
 
-if __name__ == "__main__":
+
+if __name__ == '__main__':
     main()
