@@ -20,7 +20,17 @@ class ParkingWrapper:
         
         obs_dict, info = self.env.reset()
         obs = obs_dict['observation']
+        self.goal = obs_dict['desired_goal']
+        
         return obs, info
+    
+    def get_goal(
+        self
+    ):
+        """ RETURNS THE CURRENT GOAL STATE OF THE ENVIRONMENT """
+        
+        return self.goal
+    
     
     def step(
         self,

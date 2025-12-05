@@ -9,9 +9,9 @@ class CEMPlanner:
         world_model,
         cost_function,
         scalers,
-        horizon : int = 12,
-        num_samples : int = 1000,
-        iterations : int = 5,
+        horizon : int = 30,
+        num_samples : int = 256,
+        iterations : int = 4,
         device : str = "cpu",
     ):
         self.world_model = world_model
@@ -23,95 +23,165 @@ class CEMPlanner:
         self.device = device
         self.action_dim = 2
     
-    def normalize(
-        self,
-        state,
-        action,
-    ):
-        """ CONVERT RAW STATE AND ACTION TO NORMALISED TENSORS FOR MODEL"""
+    def normalize_batch(self, states, actions):
+        """Normalize batch of states and actions"""
         
-        # MEAN FROM SKLEARN SCALER
-        state_mean = torch.tensor(self.scalers['state'].mean_, device=self.device, dtype=torch.float32)
-        state_scale = torch.tensor(self.scalers['state'].scale_, device=self.device, dtype=torch.float32)
-        action_mean = torch.tensor(self.scalers['action'].mean_, device=self.device, dtype=torch.float32)
-        action_scale = torch.tensor(self.scalers['action'].scale_, device=self.device, dtype=torch.float32)
+        state_mean = torch.tensor(
+            self.scalers['state'].mean_,
+            device=self.device,
+            dtype=torch.float32
+        )
+        state_scale = torch.tensor(
+            self.scalers['state'].scale_,
+            device=self.device,
+            dtype=torch.float32
+        )
+        action_mean = torch.tensor(
+            self.scalers['action'].mean_,
+            device=self.device,
+            dtype=torch.float32
+        )
+        action_scale = torch.tensor(
+            self.scalers['action'].scale_,
+            device=self.device,
+            dtype=torch.float32
+        )
         
-        # NORMALISE
+        states_norm = (states - state_mean) / state_scale
+        actions_norm = (actions - action_mean) / action_scale
+        
+        return states_norm, actions_norm
+
+    def denormalize_action(self, action_norm):
+        """Convert normalized action to raw space"""
+        
+        action_mean = torch.tensor(
+            self.scalers['action'].mean_,
+            device=self.device,
+            dtype=torch.float32
+        )
+        action_scale = torch.tensor(
+            self.scalers['action'].scale_,
+            device=self.device,
+            dtype=torch.float32
+        )
+        action_raw = action_norm * action_scale + action_mean
+        action_raw = torch.clamp(action_raw, -1.0, 1.0)
+        return action_raw
+
+
+    
+    def normalize(self, state, action):
+        """CONVERT RAW STATE AND ACTION TO NORMALISED TENSORS"""
+        
+        state_mean = torch.tensor(
+            self.scalers['state'].mean_,  # ← CHANGED from .mean to .mean_
+            device=self.device,
+            dtype=torch.float32
+        )
+        state_scale = torch.tensor(
+            self.scalers['state'].scale_,  # ← CHANGED from .scale to .scale_
+            device=self.device,
+            dtype=torch.float32
+        )
+        action_mean = torch.tensor(
+            self.scalers['action'].mean_,  # ← CHANGED from .mean to .mean_
+            device=self.device,
+            dtype=torch.float32
+        )
+        action_scale = torch.tensor(
+            self.scalers['action'].scale_,  # ← CHANGED from .scale to .scale_
+            device=self.device,
+            dtype=torch.float32
+        )
+        
         state_norm = (state - state_mean) / state_scale
         action_norm = (action - action_mean) / action_scale
+        
         return state_norm, action_norm
+
     
-    def denormalize_state(
-        self,
-        state_norm,
-    ):
-        """ CONVERT NORMALISED PREDICTION TENSOR TO RAW STATE  """
-        state_mean = torch.tensor(self.scalers['state'].mean_, device=self.device, dtype=torch.float32)
-        state_scale = torch.tensor(self.scalers['state'].scale_, device=self.device, dtype=torch.float32)
+    def denormalize_state(self, state_norm):
+        """Convert normalized prediction tensor to raw state"""
         
-        state = (state_norm * state_scale) + state_mean
+        state_mean = torch.tensor(
+            self.scalers['state'].mean_,  # ← CHANGED from .mean to .mean_
+            device=self.device,
+            dtype=torch.float32
+        )
+        state_scale = torch.tensor(
+            self.scalers['state'].scale_,  # ← CHANGED from .scale to .scale_
+            device=self.device,
+            dtype=torch.float32
+        )
+        
+        state = state_norm * state_scale + state_mean
+        
         return state
+
         
-    def plan(
-        self,
-        current_state,
-    ):
-        """ PLAN ACTIONS USING CEM AND WORLD MODEL """
-        # INIT DISTRIBUTION (RANDOM GUESSES)
-        mean = torch.zeros((self.horizon, self.action_dim), device=self.device)
-        std = torch.ones((self.horizon, self.action_dim), device=self.device)
+    def plan(self, current_state):
+        """Plan actions using CEM and world model"""
         
-        # PREP CURRENT STATE TENSOR
-        current_state_t = torch.tensor(current_state, device=self.device, dtype=torch.float32)
+        mean = torch.zeros(self.horizon, self.action_dim, device=self.device)
+        std = torch.ones(self.horizon, self.action_dim, device=self.device)
         
-        # OPTIMIZATION LOOP (THINKING PROCESS)
+        # Normalize initial state ONCE
+        current_state_raw = torch.tensor(current_state, device=self.device, dtype=torch.float32)
+        state_mean_t = torch.tensor(self.scalers['state'].mean_, device=self.device, dtype=torch.float32)
+        state_scale_t = torch.tensor(self.scalers['state'].scale_, device=self.device, dtype=torch.float32)
+        current_state_norm = (current_state_raw - state_mean_t) / state_scale_t
+        
+        action_mean_t = torch.tensor(self.scalers['action'].mean_, device=self.device, dtype=torch.float32)
+        action_scale_t = torch.tensor(self.scalers['action'].scale_, device=self.device, dtype=torch.float32)
+        
         for i in range(self.iterations):
-            
-            # 1 - SAMPLE 1000 TRAJECTORIES FROM DISTRIBUTION
-            
+            # Sample action sequences (in normalized space)
             action_seqs = torch.normal(
                 mean.expand(self.num_samples, -1, -1),
                 std.expand(self.num_samples, -1, -1)
             )
-            action_seqs = torch.clamp(action_seqs, -1, 1)  # CLAMP ACTIONS TO VALID RANGE
+            action_seqs = torch.clamp(action_seqs, -1.0, 1.0)
             
-            # 2 - SIMULATE FUTURE TRAJECTORIES USING WORLD MODEL
-            costs = torch.zeros((self.num_samples,), device=self.device)
-            state = current_state_t.expand(self.num_samples, -1) #DUPLICATE STATE 1000 TIMES
+            # Denormalize actions to raw space
+            action_seqs_raw = action_seqs * action_scale_t + action_mean_t
+            action_seqs_raw = torch.clamp(action_seqs_raw, -1.0, 1.0)
+            
+            costs = torch.zeros(self.num_samples, device=self.device)
+            state_norm = current_state_norm.expand(self.num_samples, -1)  # Keep normalized
             
             for t in range(self.horizon):
-                action = action_seqs[:, t, :]
+                action_raw = action_seqs_raw[:, t, :]  # Use raw action
                 
-                # NORMALISE > PREDICT > DENORMALISE
-                state_norm, action_norm = self.normalize(state, action)
+                # Normalize action for world model
+                action_norm = (action_raw - action_mean_t) / action_scale_t
                 
-                # PREDICT NEXT STATE
                 with torch.no_grad():
                     next_state_norm = self.world_model(state_norm, action_norm)
                 
-                # DENORMALISE NEXT STATE
-                next_state = self.denormalize_state(next_state_norm)
+                # Denormalize for cost evaluation
+                next_state_raw = next_state_norm * state_scale_t + state_mean_t
                 
-                # COMPUTE COST (USING THE CORRECT METHOD NAME)
-                # We only pass the state, because cost is purely state-dependent
-                step_cost = self.cost_function.get_cost(next_state)
+                step_cost = self.cost_function.get_cost(next_state_raw, action_raw)
                 costs += step_cost
                 
-                # UPDATE STATE
-                state = next_state
-
-            # 3 - SELECT ELITES (BEST 10%)
-            k = self.num_samples // 10
-            top_costs, top_indices = torch.topk(costs, k, largest=False) # SMALLEST COST IS BEST
-            top_actions = action_seqs[top_indices]
-
-            # 4 - UPDATE DISTRIBUTION (LEARN FROM THE BEST)
+                state_norm = next_state_norm  # Stay in normalized space
+            
+            # Select elites (best 10%)
+            k = max(1, int(0.1 * self.num_samples))
+            top_costs, top_indices = torch.topk(costs, k, largest=False)
+            top_actions = action_seqs[top_indices]  # Keep in normalized space for update
+            
+            # Update distribution
             new_mean = top_actions.mean(dim=0)
             new_std = top_actions.std(dim=0)
+            
+            # Faster convergence (was 0.9/0.1, now 0.7/0.3)
+            mean = 0.7 * new_mean + 0.3 * mean
+            std = 0.7 * new_std + 0.3 * std
+        
+        # Return denormalized action (first step of best elite sequence)
+        best_action_raw = action_seqs_raw[top_indices[0], 0, :].cpu().numpy()
+        
+        return best_action_raw
 
-            # SMOOTH UPDATE (MOMENTUM)
-            mean = 0.8 * new_mean + 0.2 * mean
-            std = 0.8 * new_std + 0.2 * std
-
-        # RETURN THE FIRST ACTION OF THE BEST PLAN
-        return mean[0].cpu().numpy()

@@ -11,43 +11,42 @@ from env_wrapper import ParkingWrapper
 from agent import DreamerAgent
 
 def main():
-    # 1. Initialize Environment (Visual Mode)
+    # Initialize Environment
     print("INITIALIZING ENVIRONMENT")
-    # render_mode='human' will pop up a window so you can watch
-    env = ParkingWrapper(render_mode='human') 
+    env = ParkingWrapper(render_mode='human')
     obs, _ = env.reset()
     
-    # 2. Define the Goal
-    # For now, we tell the agent to go to [0,0,0,0,0,0] 
-    # (Position 0,0, Velocity 0, Angle 0)
-    target_state = np.zeros(6) 
+    # Get Goal
+    target_state = env.get_goal()
+    print(f"TARGET STATE: {target_state}")
+    print(f"TARGET STATE SHAPE: {target_state.shape}")
     
-    # 3. Initialize the Dreamer Agent
-    print("LOADING DREAMER AGENT")
+    # Initialize Agent
     agent = DreamerAgent(target_state)
+    print("AGENT INITIALIZED. SIMULATION STARTED.")
     
-    print("SIMULATION STARTED. CTRL+C TO STOP.")
-    
-    # 4. The Main Loop
-    for step in range(200): # Run for 200 steps
-        # A. PLAN: Agent thinks and returns best action
+    # Main Loop
+    for step in range(200):
         env.env.render()
         
+        # Get action from planner
         action = agent.act(obs)
         
-        # B. ACT: Execute action in environment
+        # Execute in environment (action already in [-1, 1] range)
         obs, reward, terminated, truncated, info = env.step(action)
         
+        # Print status
+        x, y, vx, vy, c, s = obs
+        # FIXED LINE BELOW: action[0] and action[1]
+        print(f"step={step:3d} | pos=({x:6.2f},{y:6.2f}) | vel=({vx:5.2f},{vy:5.2f}) | action=({action[0]:5.2f},{action[1]:5.2f})")
+        
         import time
-        time.sleep(0.05)
-        #  Print status
-        if step % 10 == 0:
-            print(f"Step {step}: Action Taken {action}")
-
+        time.sleep(0.02)  # Keep rendering smooth
+        
         if terminated or truncated:
             print("EPISODE COMPLETED")
             break
-            
+    
     env.close()
     print("COMPLETED")
 
