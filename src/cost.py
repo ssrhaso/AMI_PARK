@@ -1,3 +1,4 @@
+""" COST FUNCTION DEFINITION , ACHIEVABLE GOAL """
 import torch
 import numpy as np
 
