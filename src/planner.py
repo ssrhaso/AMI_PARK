@@ -1,4 +1,3 @@
-""" IMAGINATION OF AGENT """
 import torch
 import numpy as np
 
