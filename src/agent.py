@@ -1,4 +1,4 @@
-""" BRAIN OF AGENT """
+""" THE BRAIN OF AGENT """
 
 import os, pickle, torch
 from world_model import WorldModel
