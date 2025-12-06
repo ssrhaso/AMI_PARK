@@ -1,4 +1,6 @@
-""" WRAPS HIGHWAY-ENV FUNCTIONS FOR EASE OF USE """
+""" EYES OF AGENT
+
+WRAPS HIGHWAY-ENV FUNCTIONS FOR EASE OF USE OF AGENT """
 
 import gymnasium as gym
 import highway_env
