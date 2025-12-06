@@ -14,10 +14,10 @@ class CostFunction:
         pos = states[..., 0:2]
         heading = states[..., 4]
         
-        # === 1. PRIMARY OBJECTIVE: REACH TARGET ===
+        #  1. PRIMARY OBJECTIVE: REACH TARGET 
         dist_to_target = torch.norm(pos - self.target_pos, dim=-1)
         
-        # === 2. SECONDARY OBJECTIVE: ALIGN HEADING (only final 10cm) ===
+        #  2. SECONDARY OBJECTIVE: ALIGN HEADING (only final 10cm) 
         heading_error = torch.remainder(heading - self.target_heading + np.pi, 2 * np.pi) - np.pi
         
         # Smooth ramp: starts at dist=0.10, fully active by dist=0.00
@@ -25,7 +25,7 @@ class CostFunction:
         heading_weight = torch.clamp(1.0 - (dist_to_target / 0.10), 0.0, 1.0)
         alignment_cost = (1.0 - torch.cos(heading_error)) * heading_weight * 0.2
         
-        # === 3. HARD CONSTRAINT: STAY AWAY FROM WALLS ===
+        #  3. HARD CONSTRAINT: STAY AWAY FROM WALLS 
         # Safe zone: [-0.22, 0.22] (leaves 6cm buffer from 0.28 true limit)
         # The 6cm buffer absorbs ~3 steps of model drift
         
@@ -37,7 +37,7 @@ class CostFunction:
         # 1cm over = 10.0 cost. 3cm over = 30.0 cost.
         wall_cost = 1000.0 * (x_violation**2 + y_violation**2)
         
-        # === COMBINE ===
+        #  COMBINE 
         total = dist_to_target + alignment_cost + wall_cost
         
         return total
