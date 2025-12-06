@@ -145,7 +145,7 @@ Total parameters: ~50K (tiny!)
 
 #### **Component B: Cost Module (Scoring Function)**
 
-**Purpose:** Define what "good parking" means.
+**Purpose:** Define what "good parking" means
 
 **Cost Function:**
 
@@ -198,10 +198,10 @@ for each timestep:
     Σ = I                   (covariance, start at identity)
   
     for iteration in range(num_planning_iterations):
-      
+    
         # Sample action sequences
         action_sequences = sample(N=1000, mean=μ, cov=Σ)
-      
+    
         # Rollout each sequence through world model
         costs = []
         for seq in action_sequences:
@@ -212,15 +212,15 @@ for each timestep:
                 total_cost += cost_function(s_next)
                 s_current = s_next
             costs.append(total_cost)
-      
+    
         # Select elite (top-10%)
         elite_idx = argsort(costs)[:int(0.1 * N)]
         elite_sequences = action_sequences[elite_idx]
-      
+    
         # Update distribution toward elites
         μ_new = mean(elite_sequences, axis=0)
         Σ_new = cov(elite_sequences)
-      
+    
         # Smooth update (momentum)
         μ = 0.9 * μ + 0.1 * μ_new
         Σ = 0.9 * Σ + 0.1 * Σ_new
